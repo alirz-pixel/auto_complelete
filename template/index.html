@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>자동완성</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        #autocomplete_wrap {
+            width: 60%;
+            margin: auto;
+        }
+
+        #searchWrap {
+            position: relative;
+        }
+
+        #searchBox {
+            outline: none;
+            margin: auto;
+            width: 100%;
+            padding: 7px;
+            padding-left: 22px;
+            padding-top: 9px;
+            border-radius: 23px;
+            border: solid 2px #8383ff;
+            font-size: 1.2em;
+            background-color: white;
+        }
+
+        #searchBox:hover {
+            border: solid 2px #5d5da6;
+            box-shadow: 0 2px 4px 0 rgba(0, 0, 0, .12);
+        }
+
+        #searchWrap:focus-within:has(.result-item) #searchBox {
+            border: solid 2px #8383ff;
+            border-radius: 8px 8px 0 0;
+        }
+
+        #results {
+            position: absolute;
+            top: 41.8px;
+            width: 100%;
+            display: none;
+            margin: 0;
+            padding: 11px 0;
+            border: solid 1px;
+            background-color: white;
+            border-radius: 0 0 12px 12px;
+            box-shadow: 0 2px 9px 4px rgb(0 0 0 / 13%);
+        }
+
+        #searchWrap:focus-within #results:has(.result-item) {
+            display: block;
+        }
+
+        .result-item {
+            padding: 6px 0;
+            padding-left: 24px;
+            font-size: 1.07em;
+        }
+
+        .result-item:hover {
+            cursor: pointer;
+        }
+
+        .result-item.onFocus {
+            background-color: #e7e7e7;
+            text-decoration: underline;
+        }
+
+        #main {
+            width: 80%;
+            margin: auto;
+        }
+
+        #main .result-card {
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            background-color: #f9f9f9;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        #main .result-card div:not(:last-child) {
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+<div id="autocomplete_wrap">
+<!--    <h1>검색어 자동완성</h1>-->
+    <h1>사전</h1>
+    <div id="searchWrap">
+        <input type="text" id="searchBox" oninput="fetchSuggestions()">
+        <div id="results"></div>
+    </div>
+</div>
+<div id="main"></div>
+
+<script>
+    let focus_idx = -1;
+    let on_loading = false;
+    let datas = []
+
+    function display_focus_item(result_wrap, focus_item) {
+        const focusEl = result_wrap.getElementsByClassName("onFocus")[0]
+        if (focusEl) {
+            focusEl.classList.remove("onFocus")
+        }
+        focus_item.classList.add("onFocus")
+
+        document.getElementById("searchBox").value = focus_item.getAttribute("data")
+        // console.log()
+    }
+
+    async function render_results() {
+        let res;
+        const searchEl = document.getElementById("searchBox")
+        searchEl.blur(); // 포커스 제거
+
+        if (focus_idx === -1) {
+            res = await fetch(`/search/word?q=${searchEl.value}`)
+        } else {
+            res = await fetch(`/search/words?word=${datas[focus_idx].word}&ids=${datas[focus_idx].ids}`)
+        }
+        focus_idx = -1;
+
+        const search_results = (await res.json()) // .slice(0, 10)
+        const result_container = document.getElementById("main")
+
+        result_container.innerHTML = ''
+        search_results.forEach(item => {
+            const [id, word, kind, code, pos, description, updated_at] = item;
+
+            const card = document.createElement('div');
+            card.classList.add("result-card")
+
+            card.innerHTML = `
+                <div><strong>단어:</strong> ${word}</div>
+                <div><strong>종류:</strong> ${kind}</div>
+                <div><strong>코드:</strong> ${code}</div>
+                <div><strong>품사:</strong> ${pos}</div>
+                <div><strong>설명:</strong> ${description}</div>
+                <div style="color: #666; font-size: 0.9em;"><strong>업데이트:</strong> ${new Date(updated_at).toLocaleString()}</div>
+            `;
+
+            result_container.appendChild(card);
+        })
+        console.log(search_results)
+    }
+
+    async function fetchSuggestions() {
+        const query = document.getElementById('searchBox').value;
+        if (!query) {
+            document.getElementById('results').innerHTML = "";
+            return;
+        }
+        on_loading = true;
+        focus_idx = -1;
+
+        const res = await fetch(`/autocomplete?q=${encodeURIComponent(query)}`);
+        const cur_datas = await res.json()
+        if (cur_datas.length === 0) {
+            // 가장 마지막으로 검색된 걸 그대로 유지
+            on_loading = false;
+            return;
+        }
+        datas = cur_datas; // 현재 검색 중인 단어의 자동완성이 있다면 갱신
+
+        const result_wrap = document.getElementById('results');
+        result_wrap.innerHTML = "";
+
+        const fragment = document.createDocumentFragment();
+        for (let i = 0; i < datas.length; i++) {
+            const item = datas[i]
+            // data.forEach(item => {
+            const result_item = document.createElement('div');
+            result_item.classList.add("result-item")
+            result_item.textContent = `${item.word} (IDs: ${Array.from(item.ids.slice(0, 5)).join(', ')})`;
+            result_item.setAttribute("data", item.word)
+            fragment.appendChild(result_item);
+
+            result_item.addEventListener("mouseenter", () => {
+                focus_idx = i;
+                display_focus_item(result_wrap, result_item)
+            })
+            result_item.addEventListener("click", () => {
+                render_results()
+
+            })
+        }
+
+        result_wrap.appendChild(fragment);
+        on_loading = false;
+    }
+
+    document.getElementById("searchBox").addEventListener('keydown', (e) => {
+        if (e.key === "Enter") {
+            render_results()
+            return
+        }
+
+        setTimeout(() => {
+            if (on_loading) return;
+
+            const result_wrap = document.getElementById('results');
+            const result_items = result_wrap.getElementsByClassName("result-item");
+
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                focus_idx = (focus_idx + 1) % result_items.length;
+            }
+            else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                if (focus_idx === -1)
+                    focus_idx = 0;
+                focus_idx = (focus_idx - 1 + result_items.length) % result_items.length;
+            }
+
+            if (focus_idx === -1)
+                return;
+
+            display_focus_item(result_wrap, result_items[focus_idx])
+        }, 0)
+    })
+
+    document.getElementById("autocomplete_wrap").addEventListener("mousedown", function (e) {
+        const searchBox = document.getElementById("searchBox");
+
+        // 클릭 이벤트로 focus가 빠지는 걸 막음
+        if (e.target !== searchBox) {
+            e.preventDefault();
+            searchBox.focus(); // 강제로 다시 focus
+        }
+    });
+
+    // TODO: 검색 도중 검색 결과가 없다면, 가장 마지막으로 보여준 내용 그대로 유지
+    //    - 단, 공백일 경우엔 마지막 내용도 지워야 함
+    // TODO: focus_idx == 0 일 때, 위쪽 방향키를 누르면 자동활성이 비활성화되도록
+    // TODO: 위에 있다는 느낌 주기 위해서 box-shadow 주기
+    // TODO: 검색 결과에 우선순위 부여하기
+    // TODO: 검색 결과 무한 스크롤 부여하기 (cursor 방식의 성능 이점이 마음에 들었음 vs OFFSET의 성능이 뒤로갈수록 느려짐 _ SKIP COST)
+
+</script>
+</body>
+</html>
