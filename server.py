@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.templating import Jinja2Templates
 
 from data_loader.db import fetchall, fetchall_by_ids, fetchall_by_word
-from data_loader.trie import Trie
+from data_loader.compressed_trie import CompressedTrie as Trie
 
 import asyncio
 import time
